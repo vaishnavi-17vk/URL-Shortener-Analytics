@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkStream | Enterprise URL Analytics</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>LinkStream 2.0</h1>
+            <p>The smartest way to shorten and track your connections.</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showPanel('userPanel', this)">Create Link</button>
+            <button class="tab-btn" onclick="showPanel('adminPanel', this); fetchAdminStats();">Admin Dashboard</button>
+        </div>
+
+        <!-- USER PANEL -->
+        <div id="userPanel" class="view-panel active">
+            <section class="shorten-card">
+                <div class="input-group">
+                    <label class="label">Primary URL</label>
+                    <input type="text" placeholder="https://example.com/very/long/link" id="urlInput">
+                </div>
+
+                <div class="advanced-grid">
+                    <div class="input-group">
+                        <label class="label">Custom Alias (Optional)</label>
+                        <input type="text" placeholder="e.g. my-custom-link" id="aliasInput">
+                    </div>
+                    <div class="input-group">
+                        <label class="label">Expiration (Hours)</label>
+                        <select id="expiryInput">
+                            <option value="">Never</option>
+                            <option value="1">1 Hour</option>
+                            <option value="24">24 Hours</option>
+                            <option value="168">1 Week</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label class="label">Max Clicks (Optional)</label>
+                        <input type="number" placeholder="e.g. 100" id="maxClicksInput">
+                    </div>
+                </div>
+
+                <button class="primary-btn" onclick="shorten()">Shorten with Analytics</button>
+            </section>
+
+            <section class="stats-grid" id="userLinksGrid">
+                <!-- User links cards will appear here -->
+            </section>
+        </div>
+
+        <!-- ADMIN PANEL -->
+        <div id="adminPanel" class="view-panel">
+            <div class="admin-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Short URL</th>
+                            <th>Original Link</th>
+                            <th>Creator</th>
+                            <th>Clicks</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminTableBody">
+                        <!-- Data fetched from API -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function deleteCode(code) {
+            if (!confirm(`Are you sure you want to delete short.ly/${code}?`)) return;
+            try {
+                const response = await fetch(`http://localhost:8081/api/admin/delete?code=${code}`);
+                const data = await response.json();
+                if (data.status === 'Deleted') {
+                    fetchAdminStats(); // Refresh table
+                }
+            } catch (err) { alert("Delete failed!"); }
+        }
+
+        function showPanel(panelId, btn) {
+            document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(panelId).classList.add('active');
+            btn.classList.add('active');
+        }
+
+        async function shorten() {
+            const urlInput = document.getElementById('urlInput');
+            const aliasInput = document.getElementById('aliasInput');
+            const expiryInput = document.getElementById('expiryInput');
+            const maxInput = document.getElementById('maxClicksInput');
+
+            if (!urlInput.value) return;
+
+            let query = `url=${encodeURIComponent(urlInput.value)}`;
+            if (aliasInput.value) query += `&alias=${encodeURIComponent(aliasInput.value)}`;
+            if (expiryInput.value) query += `&expiry=${expiryInput.value}`;
+            if (maxInput.value) query += `&maxClicks=${maxInput.value}`;
+
+            try {
+                const response = await fetch(`http://localhost:8081/api/shorten?${query}`);
+                const data = await response.json();
+                
+                if (data.shortUrl) {
+                    addLinkCard(data.shortUrl, urlInput.value, aliasInput.value || data.code);
+                    urlInput.value = aliasInput.value = maxInput.value = '';
+                } else if (data.error) {
+                    alert("Error: " + data.error);
+                }
+            } catch (err) {
+                alert("Backend Connection Failed!");
+            }
+        }
+
+        async function fetchAdminStats() {
+            try {
+                const response = await fetch('http://localhost:8081/api/admin/stats');
+                const stats = await response.json();
+                const tbody = document.getElementById('adminTableBody');
+                tbody.innerHTML = '';
+
+                stats.forEach(s => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><a href="http://localhost:8081/r/${s.code}" target="_blank" style="color:#6366f1;font-weight:600;">short.ly/${s.code}</a></td>
+                        <td style="color:#94a3b8;font-size:0.85rem;">${s.url}</td>
+                        <td><span class="badge ${s.creator === 'Admin' ? 'badge-admin' : 'badge-live'}">${s.creator}</span></td>
+                        <td><strong>${s.clicks}</strong></td>
+                        <td style="color:${s.expired ? '#f43f5e' : '#10b981'};font-size:0.85rem;font-weight:700;">${s.expired ? 'Expired' : 'Active'}</td>
+                        <td><button onclick="deleteCode('${s.code}')" style="background:#f43f5e;padding:4px 8px;border-radius:6px;font-size:0.7rem;">Delete</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) { console.error(err); }
+        }
+
+        function addLinkCard(shortUrl, longUrl, code) {
+            const grid = document.getElementById('userLinksGrid');
+            const card = document.createElement('div');
+            card.className = 'url-card';
+            card.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                    <a href="${shortUrl}" target="_blank" style="color:#6366f1;font-weight:700;text-decoration:none;font-size:1.2rem;">short.ly/${code}</a>
+                    <span class="badge badge-live">Live</span>
+                </div>
+                <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${longUrl}</div>
+                <div style="display:flex;gap:2rem;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;">
+                    <div><div style="font-size:1.2rem;font-weight:700;">0</div><div style="font-size:0.7rem;color:#94a3b8;">CLICKS</div></div>
+                    <div><div style="font-size:1.2rem;font-weight:700;">--</div><div style="font-size:0.7rem;color:#94a3b8;">DEVICE</div></div>
+                </div>
+            `;
+            grid.insertBefore(card, grid.firstChild);
+        }
+    </script>
+</body>
+</html>
