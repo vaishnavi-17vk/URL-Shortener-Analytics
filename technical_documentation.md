@@ -1,55 +1,79 @@
 # LinkStream Technical Documentation
 
-This document provides a deep dive into the architecture and modules of the LinkStream URL Shortener & Tracker.
+This document provides a comprehensive analysis of the LinkStream architecture, detailing its modules, operations, and the Java features utilized.
 
 ---
 
-## 🏗️ 1. Module Overview: The Layered Architecture
+## 🏗️ 1. Architecture Deep-Dive
 
-LinkStream follows a **Layered Architecture** pattern, which separates concerns and makes the system easier to test and scale.
+LinkStream follows a **Layered Architecture** with clear separation of concerns (Models, Repositories, Services, Controllers).
 
-### 📦 A. Model Layer (`src/model/URL.java`)
-**The Data Blueprint**
-- **Role**: Defines what a "URL" object looks like in our system.
-- **Logic**: It stores the original URL, the generated short code, and advanced metadata like `expiryTime`, `maxClicks`, and `deviceStats`.
-- **Key Method**: `recordClick(deviceType)` increments the count and updates the device-specific tracking map.
-
-### 📦 B. Utils Layer (`src/utils/Base62Encoder.java`)
-**The Engine**
-- **Role**: Handles the mathematical conversion of IDs into short strings.
-- **Logic**: Uses a character set of 62 (a-z, A-Z, 0-9). This is the industry standard (used by Bitly) because it creates very short, readable URLs.
-- **Example**: ID `10000` might become `cLs`.
-
-### 📦 C. Repository Layer (`src/repository/URLRepository.java`)
-**The Database Manager**
-- **Role**: Manages data storage and retrieval.
-- **Logic**: Uses a `HashMap` for lightning-fast lookups (O(1) time complexity).
-- **Persistence**: It reads/writes to `data.txt`. Every time a URL is saved or deleted, the repo synchronizes the text file to ensure no data is lost if the app restarts.
-
-### 📦 D. Service Layer (`src/service/URLShortenerService.java`)
-**The Brain**
-- **Role**: Contains the "Business Logic".
-- **Logic**: 
-  - Validates URLs (adds `https://` if missing).
-  - Checks for code collisions.
-  - Detects device types from `User-Agent`.
-  - Determines if a link is **Expired** or has reached its **Click Limit**.
-
-### 📦 E. Controller Layer (`src/controller/URLController.java`)
-**The CLI Interface**
-- **Role**: Provides a text-based menu for terminal users.
-- **Logic**: Translates user inputs into Service calls.
-
-### 🚀 F. Entry Point & API (`src/Main.java`)
+### 📦 A. Main Module (`src/Main.java`)
 **The Orchestrator**
-- **Role**: Launches the entire system.
-- **Logic**: Actually starts **two systems at once**:
-  1. **The CLI**: For local management.
-  2. **The HTTP Server**: A background web server that exposes REST API endpoints (`/api/shorten`, `/api/admin/stats`, `/api/admin/delete`) and handles live browser **302 Redirects**.
+- **Operations**:
+  - `main(String[] args)`: Initializes the application components and starts the server.
+  - `startWebServer(...)`: Spins up a multi-threaded `HttpServer` to handle API and Redirect requests.
+  - `parseQuery(String query)`: Parses URI query parameters into a `Map`.
+- **Java Features Used**:
+  - **HTTP Server API**: `com.sun.net.httpserver.HttpServer` for lightweight web serving.
+  - **Lambda Expressions**: Used in `server.createContext` for concise request handling.
+  - **Multithreading**: `Executors.newFixedThreadPool(10)` handles concurrent user requests.
+  - **Streams API**: `java.util.stream.Collectors` for query parameter parsing.
+
+### 📦 B. Service Layer (`src/service/URLShortenerService.java`)
+**The Business Brain**
+- **Operations**:
+  - `shortenURL(...)`: Validates input, determines link type (`Permanent` vs `Temporary`), and generates codes.
+  - `redirect(...)`: Validates link integrity (expiry, password) and records analytics.
+  - `deleteURL(...)`: Removes links from the repository.
+- **Java Features Used**:
+  - **Polymorphism**: Interacts with `AbstractLink` while the actual object may be `TemporaryLink` or `PermanentLink`.
+  - **Custom Exceptions**: Uses `InvalidURLException`, `LinkExpiredException`, etc., for granular error handling.
+  - **Date/Time API**: `java.time.LocalDateTime` for high-precision expiry tracking.
+
+### 📦 C. Data Layer (`src/repository/URLRepository.java`)
+**Thread-Safe Persistence**
+- **Operations**:
+  - `save(AbstractLink link)`: Adds/Updates links in the map.
+  - `getAll(User user)`: Retrieves links based on user roles (Admin vs Guest).
+  - `saveData()` / `loadData()`: Handles binary persistence.
+- **Java Features Used**:
+  - **Concurrent Collections**: `ConcurrentHashMap` ensures thread safety without global locks.
+  - **Java Serialization**: `ObjectOutputStream` / `ObjectInputStream` for object persistence to `links.dat`.
+  - **Scheduled Executor**: `scheduler.scheduleAtFixedRate` for periodic auto-saving.
+  - **Filter Logic**: Streams and `filter()` for role-based access control.
+
+### 📦 D. Model Layer (`src/model/`)
+**The Logic Entities**
+- **Files**: `AbstractLink.java`, `TemporaryLink.java`, `PermanentLink.java`, `User.java`
+- **Operations**:
+  - `recordClick(deviceType)`: Advanced logic to track device variety and timestamped clicks.
+  - `isExpired()`: Abstract logic overridden by child classes to determine link validity.
+- **Java Features Used**:
+  - **Abstraction**: `abstract class AbstractLink` defines the blueprint.
+  - **Inheritance**: `TemporaryLink extends AbstractLink`.
+  - **Encapsulation**: Private fields with strictly defined getters/setters and serializable IDs.
+
+### 📦 E. Security Module (`src/security/`)
+**Authentication Hub**
+- **Files**: `Authenticator.java` (Interface), `LoginService.java`
+- **Operations**:
+  - `login(u, p)`: Simple yet effective verification against the `UserRepository`.
+- **Java Features Used**:
+  - **Interfaces**: Decouples the authentication logic from the rest of the application.
+
+### 📦 F. Utility Layer (`src/utils/Base62Encoder.java`)
+**The Mathematical Core**
+- **Operations**:
+  - `encode(long num)`: Converts numeric IDs into alphanumeric Base62 strings (0-9, a-z, A-Z).
+- **Java Features Used**:
+  - **Static Methods**: Pure functional logic that doesn't require object instantiation.
+  - **StringBuilder**: Efficient string manipulation for code generation.
 
 ---
 
-## 🌐 2. The Web Frontend (`web/`)
-- **Dashboard (`index.html`)**: A modern, single-page application (SPA) built with Vanilla JS.
-- **Design System (`style.css`)**: Implements **Glassmorphism**, responsive layouts, and a dual-perspective (User/Admin) UI.
-- **System Bridge**: It uses the `fetch()` API to communicate asynchronously with the Java backend.
+## 🔄 2. Operational Workflow
+
+1. **Shorten**: User inputs a URL -> `ShortenerService` validates -> `Base62Encoder` generates code -> `URLRepository` persists.
+2. **Access**: Visitor opens short link -> `HttpServer` captures request -> `ShortenerService` checks expiry/password -> Record analytic -> **302 Redirect**.
+3. **Analytics**: Admin requests stats -> `URLRepository` filters based on `User` object -> JSON response sent to Frontend.

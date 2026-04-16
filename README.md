@@ -1,43 +1,32 @@
-# LinkStream | Java URL Shortener & Tracker
+# LinkStream | Java URL Shortener & Analytics Platform
 
-A professional-grade URL shortening and analytics tracking system built with Java. This project demonstrates clean architecture, persistence logic, and Base62 encoding.
+A high-performance, full-stack URL shortening and analytics system built with Core Java. This project demonstrates modern software design patterns, concurrent persistence, and a real-time HTTP server.
 
-## 🚀 Features
+## 🌟 Project Overview
+LinkStream is more than just a URL shortener; it's a link management platform. It allows users to create short links with custom aliases, expiration dates, click limits, and password protection. It features a dual-interface: a terminal-based CLI for management and a high-speed HTTP server for redirects and web-based dashboard analytics.
 
-- **Base62 Encoding**: Generates short, readable URL slugs (e.g., `cB2`).
-- **Persistence**: Automatically saves and loads data from `data.txt` to survive restarts.
-- **Analytics Tracking**: Tracks total clicks and last-click timestamps for every link.
-- **Robust Controller**: User-friendly console interface with input validation.
-- **Premium Web Mockup**: includes a modern dashboard design (`/web`).
+## 🔄 Workflow
+1. **Request Intake**: A request arrives via the **REST API** (`HttpServer` in `Main.java`) or **CLI** (`URLController`).
+2. **Business Logic**: The request is processed by the `URLShortenerService`, which validates the URL and determines if the link should be `Permanent` or `Temporary`.
+3. **Encoding**: If no custom alias is provided, the `Base62Encoder` generates a unique short code.
+4. **Storage**: The `URLRepository` stores the link in a `ConcurrentHashMap` and persists it to `links.dat` using Java Serialization.
+5. **Redirection**: When a short link is visited, the server records analytics (device type, timestamp) and performs a **302 Redirect** to the destination.
 
-## 🏗️ Architecture
-
-- `src/model`: Core entities (URL, Tracking data).
-- `src/utils`: Helper classes (Encoding logic).
-- `src/repository`: Data access and persistence layer.
-- `src/service`: Business logic for shortening and redirection.
-- `src/controller`: User interaction layer.
+## 🚀 Key Features
+- **Concurrent Persistence**: Uses `ConcurrentHashMap` and `ScheduledExecutorService` for thread-safe memory management and background auto-saving.
+- **Advanced Link Logic**: Supports expiry dates, click quotas, and password-protected links.
+- **Deep Analytics**: Tracks device distribution (Mobile vs Desktop) and real-time click counts.
+- **RBAC (Role Based Access Control)**: Integrated User/Admin management system for secure link tracking.
 
 ## 🛠️ How to Run
+1. **Compile**: `javac -d bin -sourcepath src src/Main.java`
+2. **Run**: `java -cp bin Main`
+3. **Access**: Open [http://localhost:8081](http://localhost:8081)
 
-1. **Compile the project**:
-   ```bash
-   javac -d out src/**/*.java src/Main.java
-   ```
-
-2. **Run the application**:
-   ```bash
-   java -cp out Main
-   ```
-
-## 📊 Sample Data Format (`data.txt`)
-Data is stored in a pipe-delimited format:
-```text
-cB2|https://google.com|12
-aF9|https://github.com|45
-```
-
-## 🌟 Future Roadmap
-- [ ] MySQL Database Integration (JDBC)
-- [ ] REST API using Spring Boot
-- [ ] Real-time Dashboard with React
+## 🏗️ Project Structure
+- `src/model`: Core entities using Polymorphism and Encapsulation.
+- `src/repository`: Thread-safe data access and serialization layer.
+- `src/service`: Business logic for URL management.
+- `src/security`: Authentication and Access Control implementations.
+- `src/utils`: Mathematical utilities (Base62).
+- `web/`: Modern Glassmorphic dashboard frontend.

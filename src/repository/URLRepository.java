@@ -7,26 +7,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class URLRepository {
     private Map<String, AbstractLink> map = new ConcurrentHashMap<>();
     private final String FILE_PATH = "links.dat";
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public URLRepository() {
         loadData();
+        // Auto-save every 10 seconds
+        scheduler.scheduleAtFixedRate(this::saveData, 10, 10, TimeUnit.SECONDS);
     }
 
-    public synchronized void save(AbstractLink link) {
+    public void save(AbstractLink link) {
         map.put(link.getShortCode(), link);
-        saveData();
     }
 
-    public synchronized void delete(String shortCode) {
-        if (map.containsKey(shortCode)) {
-            map.remove(shortCode);
-            saveData();
-        }
+    public void delete(String shortCode) {
+        map.remove(shortCode);
     }
 
     public AbstractLink find(String shortCode) {

@@ -118,22 +118,27 @@ public class Main {
                     exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
                     exchange.getResponseHeaders().add("Content-Type", "application/json");
                     
-                    Map<String, String> params = parseQuery(exchange.getRequestURI().getQuery());
-                    String username = params.getOrDefault("username", "Guest");
-                    User user = userRepo.findByUsername(username);
+                    try {
+                        Map<String, String> params = parseQuery(exchange.getRequestURI().getQuery());
+                        String username = params.getOrDefault("username", "Guest");
+                        User user = userRepo.findByUsername(username);
 
-                    StringBuilder json = new StringBuilder("[");
-                    for (AbstractLink link : repo.getAll(user)) {
-                        String topDevice = link.getDeviceStats().entrySet().stream()
-                            .max(Map.Entry.comparingByValue())
-                            .map(Map.Entry::getKey).orElse("None");
-                            
-                        json.append(String.format("{\"code\":\"%s\",\"url\":\"%s\",\"clicks\":%d,\"creator\":\"%s\",\"expired\":%b,\"protected\":%b,\"topDevice\":\"%s\"},",
-                            link.getShortCode(), link.getLongUrl(), link.getClickCount(), link.getCreator(), link.isExpired(), link.getPassword() != null, topDevice));
+                        StringBuilder json = new StringBuilder("[");
+                        for (AbstractLink link : repo.getAll(user)) {
+                            String topDevice = link.getDeviceStats().entrySet().stream()
+                                .max(Map.Entry.comparingByValue())
+                                .map(Map.Entry::getKey).orElse("None");
+                                
+                            json.append(String.format("{\"code\":\"%s\",\"url\":\"%s\",\"clicks\":%d,\"creator\":\"%s\",\"expired\":%b,\"protected\":%b,\"topDevice\":\"%s\"},",
+                                link.getShortCode(), link.getLongUrl(), link.getClickCount(), link.getCreator(), link.isExpired(), link.getPassword() != null, topDevice));
+                        }
+                        if (json.length() > 1) json.setLength(json.length() - 1);
+                        json.append("]");
+                        sendResponse(exchange, 200, json.toString());
+                    } catch (Exception e) {
+                        System.err.println("Stats error: " + e.getMessage());
+                        sendResponse(exchange, 500, "[]");
                     }
-                    if (json.length() > 1) json.setLength(json.length() - 1);
-                    json.append("]");
-                    sendResponse(exchange, 200, json.toString());
                 });
 
                 // 4. ADMIN Delete API
@@ -164,15 +169,38 @@ public class Main {
                     try {
                         String destination = service.redirect(code, userAgent, providedPassword);
                         exchange.getResponseHeaders().add("Location", destination);
+                        exchange.getResponseHeaders().add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
                         exchange.sendResponseHeaders(302, -1);
                     } catch (AccessDeniedException e) {
-                        sendResponse(exchange, 403, "Access Denied");
+                        String html = "<html><head><style>" +
+                            "body { background: #0f172a; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }" +
+                            ".card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }" +
+                            "input { background: rgba(0,0,0,0.2); border: 1px solid rgba(99,102,241,0.5); color: white; padding: 0.8rem; border-radius: 8px; width: 100%; margin-bottom: 1rem; box-sizing: border-box; }" +
+                            "button { background: #6366f1; color: white; border: none; padding: 0.8rem 2rem; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; }" +
+                            "</style></head><body><div class='card'>" +
+                            "<h1>🔐 Protected Link</h1><p>This link requires a password to access.</p>" +
+                            "<form method='GET'><input type='password' name='password' placeholder='Enter password' required><button type='submit'>Unlock Link</button></form>" +
+                            "</div></body></html>";
+                        sendResponse(exchange, 403, html);
                     } catch (LinkExpiredException e) {
-                        sendResponse(exchange, 410, "Expired");
+                        sendResponse(exchange, 410, "<html><body style='background:#0f172a;color:white;font-family:sans-serif;text-align:center;'><h1>⏰ Link Expired</h1><p>" + e.getMessage() + "</p></body></html>");
                     } catch (Exception e) {
-                        sendResponse(exchange, 404, "Not Found");
+                        sendResponse(exchange, 404, "Code Not Found");
                     }
                     exchange.close();
+                });
+
+                // 6. CSV EXPORT API
+                server.createContext("/api/admin/export", exchange -> {
+                    exchange.getResponseHeaders().add("Content-Type", "text/csv");
+                    exchange.getResponseHeaders().add("Content-Disposition", "attachment; filename=links_report.csv");
+                    
+                    StringBuilder csv = new StringBuilder("Code,Long URL,Clicks,Creator,Expired\n");
+                    for (AbstractLink link : repo.getRawMap().values()) {
+                        csv.append(String.format("%s,%s,%d,%s,%b\n", 
+                            link.getShortCode(), link.getLongUrl(), link.getClickCount(), link.getCreator(), link.isExpired()));
+                    }
+                    sendResponse(exchange, 200, csv.toString());
                 });
 
                 server.setExecutor(Executors.newFixedThreadPool(10));
