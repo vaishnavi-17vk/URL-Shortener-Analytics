@@ -1,8 +1,9 @@
 package service;
 
-import model.URL;
+import model.*;
 import repository.URLRepository;
 import utils.Base62Encoder;
+import exception.*;
 import java.time.LocalDateTime;
 
 public class URLShortenerService {
@@ -11,37 +12,48 @@ public class URLShortenerService {
 
     public URLShortenerService(URLRepository repo) {
         this.repo = repo;
-        this.counter = 10000 + repo.getAll().size();
+        this.counter = 10000 + repo.getRawMap().size();
     }
 
-    public String shortenURL(String longUrl, String customAlias, Integer expiryHours, Integer maxClicks, String creator) {
-        if (!longUrl.startsWith("http")) longUrl = "https://" + longUrl;
+    public String shortenURL(String longUrl, String customAlias, Integer expiryHours, Integer maxClicks, String creator, String password) 
+            throws InvalidURLException {
+        
+        if (longUrl == null || !longUrl.startsWith("http")) {
+            throw new InvalidURLException("Invalid URL protocol");
+        }
 
         String shortCode = (customAlias != null && !customAlias.isEmpty()) ? customAlias : Base62Encoder.encode(counter++);
         
-        // Prevent duplicate aliases
-        if (repo.find(shortCode) != null && (customAlias != null)) return null; 
+        if (repo.find(shortCode) != null && (customAlias != null)) {
+            throw new InvalidURLException("Alias taken");
+        } 
 
-        URL url = new URL(shortCode, longUrl);
-        if (expiryHours != null) url.setExpiryTime(LocalDateTime.now().plusHours(expiryHours));
-        if (maxClicks != null) url.setMaxClicks(maxClicks);
-        url.setCreator(creator);
+        AbstractLink link;
+        if (expiryHours != null || maxClicks != null) {
+            LocalDateTime expiryDate = (expiryHours != null) ? LocalDateTime.now().plusHours(expiryHours) : null;
+            link = new TemporaryLink(shortCode, longUrl, expiryDate, maxClicks);
+        } else {
+            link = new PermanentLink(shortCode, longUrl);
+        }
+
+        link.setCreator(creator);
+        link.setPassword(password);
         
-        repo.save(url);
+        repo.save(link);
         return shortCode;
     }
 
-    public String redirect(String shortCode, String userAgent) {
-        URL url = repo.find(shortCode);
-        if (url != null) {
-            if (url.isExpired()) return "EXPIRED";
-            
-            String deviceType = detectDevice(userAgent);
-            url.recordClick(deviceType);
-            repo.save(url); // Persist updated click count and stats
-            return url.getLongUrl();
-        }
-        return null;
+    public String redirect(String shortCode, String userAgent, String password) throws LinkStreamException {
+        AbstractLink link = repo.find(shortCode);
+        
+        if (link == null) throw new LinkStreamException("Not found");
+        if (link.isExpired()) throw new LinkExpiredException("Expired");
+        if (!link.checkPassword(password)) throw new AccessDeniedException("Locked");
+
+        link.recordClick(userAgent.toLowerCase().contains("mobile") ? "Mobile" : "Desktop");
+        repo.save(link); 
+        
+        return link.getLongUrl();
     }
 
     public boolean deleteURL(String shortCode) {
@@ -50,15 +62,5 @@ public class URLShortenerService {
             return true;
         }
         return false;
-    }
-
-    private String detectDevice(String userAgent) {
-        if (userAgent == null) return "Unknown";
-        if (userAgent.toLowerCase().contains("mobile")) return "Mobile";
-        return "Desktop";
-    }
-
-    public URL getUrlDetails(String shortCode) {
-        return repo.find(shortCode);
     }
 }

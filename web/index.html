@@ -3,22 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkStream | Enterprise URL Analytics</title>
+    <title>LinkStream | Secure URL Analytics</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
+    <!-- AUTHENTICATION SCREEN -->
+    <div id="authScreen" class="auth-container">
+        <div class="auth-card">
+            <h1 id="authTitle">Welcome to LinkStream</h1>
+            <p id="authSubtitle">Login to manage your secure connections</p>
+            
+            <div class="auth-form">
+                <div class="input-group">
+                    <label>Username</label>
+                    <input type="text" id="usernameInput" placeholder="Enter your username">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="passwordInput_Auth" placeholder="Enter your password">
+                </div>
+                <button class="primary-btn" id="loginBtn" onclick="handleLogin()">Login</button>
+                <div class="auth-footer">
+                    <span id="authToggleText">New to LinkStream?</span>
+                    <a href="#" onclick="toggleAuthMode()" id="authLink">Create Account</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN DASHBOARD (HIDDEN) -->
+    <div id="appScreen" class="container" style="display:none;">
         <header>
-            <h1>LinkStream 2.0</h1>
-            <p>The smartest way to shorten and track your connections.</p>
+            <div style="display:flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>LinkStream Dashboard</h1>
+                    <p>Welcome back, <span id="userDisplayName" style="font-weight:700;color:#6366f1;">Guest</span>!</p>
+                </div>
+                <button class="badge" onclick="logout()" style="cursor:pointer;background:#f43f5e;border:none;">Logout</button>
+            </div>
         </header>
 
         <div class="tabs">
-            <button class="tab-btn active" onclick="showPanel('userPanel', this)">Create Link</button>
-            <button class="tab-btn" onclick="showPanel('adminPanel', this); fetchAdminStats();">Admin Dashboard</button>
+            <button class="tab-btn active" id="userTab" onclick="showPanel('userPanel', this)">Create Link</button>
+            <button class="tab-btn" id="adminTab" onclick="showPanel('adminPanel', this); syncAllData();">Admin View</button>
         </div>
 
-        <!-- USER PANEL -->
         <div id="userPanel" class="view-panel active">
             <section class="shorten-card">
                 <div class="input-group">
@@ -37,12 +66,15 @@
                             <option value="">Never</option>
                             <option value="1">1 Hour</option>
                             <option value="24">24 Hours</option>
-                            <option value="168">1 Week</option>
                         </select>
                     </div>
                     <div class="input-group">
                         <label class="label">Max Clicks (Optional)</label>
                         <input type="number" placeholder="e.g. 100" id="maxClicksInput">
+                    </div>
+                    <div class="input-group">
+                        <label class="label">Password Protection</label>
+                        <input type="password" placeholder="Set a password" id="passwordInput_Link">
                     </div>
                 </div>
 
@@ -50,12 +82,14 @@
             </section>
 
             <section class="stats-grid" id="userLinksGrid">
-                <!-- User links cards will appear here -->
+                <!-- User links cards -->
             </section>
         </div>
 
-        <!-- ADMIN PANEL -->
         <div id="adminPanel" class="view-panel">
+            <div id="adminNotice" class="badge" style="display:none; margin-bottom: 2rem; width: 100%; text-align: center; background: rgba(99,102,241,0.1);">
+                System Administrator Privileges Active
+            </div>
             <div class="admin-table-container">
                 <table>
                     <thead>
@@ -68,26 +102,72 @@
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="adminTableBody">
-                        <!-- Data fetched from API -->
-                    </tbody>
+                    <tbody id="adminTableBody"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
     <script>
-        async function deleteCode(code) {
-            if (!confirm(`Are you sure you want to delete short.ly/${code}?`)) return;
-            try {
-                const response = await fetch(`http://localhost:8081/api/admin/delete?code=${code}`);
-                const data = await response.json();
-                if (data.status === 'Deleted') {
-                    fetchAdminStats(); // Refresh table
-                }
-            } catch (err) { alert("Delete failed!"); }
+        let currentUser = null;
+        let isLoginMode = true;
+
+        // AUTH LOGIC
+        function toggleAuthMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('authTitle').innerText = isLoginMode ? "Welcome to LinkStream" : "Join LinkStream";
+            document.getElementById('authSubtitle').innerText = isLoginMode ? "Login to manage your secure connections" : "Start trackig your links for free today";
+            document.getElementById('loginBtn').innerText = isLoginMode ? "Login" : "Sign Up";
+            document.getElementById('authToggleText').innerText = isLoginMode ? "New to LinkStream?" : "Already have an account?";
+            document.getElementById('authLink').innerText = isLoginMode ? "Create Account" : "Login Instead";
         }
 
+        async function handleLogin() {
+            const u = document.getElementById('usernameInput').value;
+            const p = document.getElementById('passwordInput_Auth').value;
+            if(!u || !p) return;
+
+            const endpoint = isLoginMode ? 'login' : 'signup';
+            try {
+                const res = await fetch(`http://localhost:8081/api/${endpoint}?u=${u}&p=${p}`);
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    if (isLoginMode) {
+                        currentUser = data;
+                        enterApp();
+                    } else {
+                        alert("Account created! Please login.");
+                        toggleAuthMode();
+                    }
+                } else {
+                    alert("Error: " + (data.error || "Authentication failed"));
+                }
+            } catch (e) { alert("Backend offline!"); }
+        }
+
+        function enterApp() {
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('appScreen').style.display = 'block';
+            document.getElementById('userDisplayName').innerText = currentUser.username;
+            
+            if (currentUser.role === 'Admin') {
+                document.getElementById('adminTab').style.display = 'inline-block';
+                document.getElementById('adminNotice').style.display = 'block';
+            } else {
+                document.getElementById('adminTab').style.display = 'none'; // Basic users don't see Admin tab
+            }
+
+            syncAllData();
+            setInterval(syncAllData, 5000); // Live updates
+        }
+
+        function logout() {
+            currentUser = null;
+            location.reload();
+        }
+
+        // APP LOGIC
         function showPanel(panelId, btn) {
             document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -100,67 +180,91 @@
             const aliasInput = document.getElementById('aliasInput');
             const expiryInput = document.getElementById('expiryInput');
             const maxInput = document.getElementById('maxClicksInput');
+            const passInput = document.getElementById('passwordInput_Link');
 
             if (!urlInput.value) return;
 
-            let query = `url=${encodeURIComponent(urlInput.value)}`;
+            let query = `url=${encodeURIComponent(urlInput.value)}&creator=${currentUser.username}`;
             if (aliasInput.value) query += `&alias=${encodeURIComponent(aliasInput.value)}`;
             if (expiryInput.value) query += `&expiry=${expiryInput.value}`;
             if (maxInput.value) query += `&maxClicks=${maxInput.value}`;
+            if (passInput.value) query += `&password=${encodeURIComponent(passInput.value)}`;
 
             try {
                 const response = await fetch(`http://localhost:8081/api/shorten?${query}`);
                 const data = await response.json();
-                
                 if (data.shortUrl) {
-                    addLinkCard(data.shortUrl, urlInput.value, aliasInput.value || data.code);
-                    urlInput.value = aliasInput.value = maxInput.value = '';
-                } else if (data.error) {
-                    alert("Error: " + data.error);
-                }
-            } catch (err) {
-                alert("Backend Connection Failed!");
-            }
+                    addLinkCard(data.shortUrl, urlInput.value, aliasInput.value || data.code, !!passInput.value, 0, 'None');
+                    urlInput.value = aliasInput.value = '';
+                } else { alert(data.error); }
+            } catch (err) { alert("Shortening failed!"); }
         }
 
-        async function fetchAdminStats() {
+        async function syncAllData() {
+            if (!currentUser) return;
             try {
-                const response = await fetch('http://localhost:8081/api/admin/stats');
+                const response = await fetch(`http://localhost:8081/api/admin/stats?username=${currentUser.username}`);
                 const stats = await response.json();
+                
+                const grid = document.getElementById('userLinksGrid');
                 const tbody = document.getElementById('adminTableBody');
                 tbody.innerHTML = '';
+                
+                // If it's the first sync, clear the grid
+                if (grid.children.length === 0) grid.innerHTML = '';
 
                 stats.forEach(s => {
+                    // Update Table
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td><a href="http://localhost:8081/r/${s.code}" target="_blank" style="color:#6366f1;font-weight:600;">short.ly/${s.code}</a></td>
-                        <td style="color:#94a3b8;font-size:0.85rem;">${s.url}</td>
-                        <td><span class="badge ${s.creator === 'Admin' ? 'badge-admin' : 'badge-live'}">${s.creator}</span></td>
-                        <td><strong>${s.clicks}</strong></td>
-                        <td style="color:${s.expired ? '#f43f5e' : '#10b981'};font-size:0.85rem;font-weight:700;">${s.expired ? 'Expired' : 'Active'}</td>
-                        <td><button onclick="deleteCode('${s.code}')" style="background:#f43f5e;padding:4px 8px;border-radius:6px;font-size:0.7rem;">Delete</button></td>
+                        <td><a href="http://localhost:8081/r/${s.code}" target="_blank">short.ly/${s.code}</a></td>
+                        <td>${s.url}</td>
+                        <td>${s.creator}</td>
+                        <td>${s.clicks}</td>
+                        <td style="color:${s.expired ? '#f43f5e' : '#10b981'}; font-weight:700;">${s.expired ? 'Expired' : 'Active'}</td>
+                        <td><button onclick="deleteCode('${s.code}')" style="background:#f43f5e; padding:4px 8px; border-radius:4px; font-size:0.75rem;">Delete</button></td>
                     `;
                     tbody.appendChild(tr);
+
+                    // Update or Add Cards
+                    let card = document.getElementById(`card-${s.code}`);
+                    if (!card) {
+                        addLinkCard(`http://localhost:8081/r/${s.code}`, s.url, s.code, s.protected, s.clicks, s.topDevice);
+                    } else {
+                        document.getElementById(`clicks-${s.code}`).innerText = s.clicks;
+                        document.getElementById(`device-${s.code}`).innerText = s.topDevice || 'None';
+                    }
                 });
-            } catch (err) { console.error(err); }
+            } catch (e) {}
         }
 
-        function addLinkCard(shortUrl, longUrl, code) {
+        function addLinkCard(shortUrl, longUrl, code, isProtected, clicks, topDevice) {
             const grid = document.getElementById('userLinksGrid');
             const card = document.createElement('div');
+            card.id = `card-${code}`;
             card.className = 'url-card';
             card.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
                     <a href="${shortUrl}" target="_blank" style="color:#6366f1;font-weight:700;text-decoration:none;font-size:1.2rem;">short.ly/${code}</a>
-                    <span class="badge badge-live">Live</span>
+                    <div style="display:flex;gap:0.5rem;">
+                        ${isProtected ? '<span class="badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border:1px solid #6366f1;">🔒 Protected</span>' : ''}
+                        <span class="badge badge-live">Live</span>
+                    </div>
                 </div>
                 <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${longUrl}</div>
                 <div style="display:flex;gap:2rem;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;">
-                    <div><div style="font-size:1.2rem;font-weight:700;">0</div><div style="font-size:0.7rem;color:#94a3b8;">CLICKS</div></div>
-                    <div><div style="font-size:1.2rem;font-weight:700;">--</div><div style="font-size:0.7rem;color:#94a3b8;">DEVICE</div></div>
+                    <div><div id="clicks-${code}" style="font-size:1.2rem;font-weight:700;">${clicks}</div><div style="font-size:0.7rem;color:#94a3b8;">CLICKS</div></div>
+                    <div><div id="device-${code}" style="font-size:1.2rem;font-weight:700;">${topDevice || 'None'}</div><div style="font-size:0.7rem;color:#94a3b8;">DEVICE</div></div>
                 </div>
             `;
             grid.insertBefore(card, grid.firstChild);
+        }
+
+        async function deleteCode(code) {
+            if (!confirm(`Delete short.ly/${code}?`)) return;
+            await fetch(`http://localhost:8081/api/admin/delete?code=${code}`);
+            document.getElementById(`card-${code}`)?.remove();
+            syncAllData();
         }
     </script>
 </body>

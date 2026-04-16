@@ -1,31 +1,33 @@
 package model;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class URL {
+public abstract class AbstractLink implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
     private String shortCode;
     private String longUrl;
     private int clickCount;
     private List<LocalDateTime> clickTimestamps;
-    
-    // Advanced Features
-    private LocalDateTime expiryTime;
-    private Integer maxClicks; // null means unlimited
-    private String creator; // User or Admin
-    private Map<String, Integer> deviceStats; // e.g., "Mobile" -> 10, "Desktop" -> 5
+    private Map<String, Integer> deviceStats;
+    private String creator;
     private boolean isSafe;
+    
+    // Encapsulation: Private password
+    private String password;
 
-    public URL(String shortCode, String longUrl) {
+    public AbstractLink(String shortCode, String longUrl) {
         this.shortCode = shortCode;
         this.longUrl = longUrl;
         this.clickCount = 0;
         this.clickTimestamps = new ArrayList<>();
         this.deviceStats = new HashMap<>();
-        this.isSafe = true; // Default to safe
+        this.isSafe = true;
     }
 
     public void recordClick(String deviceType) {
@@ -34,24 +36,24 @@ public class URL {
         deviceStats.put(deviceType, deviceStats.getOrDefault(deviceType, 0) + 1);
     }
 
-    public boolean isExpired() {
-        if (expiryTime != null && LocalDateTime.now().isAfter(expiryTime)) return true;
-        if (maxClicks != null && clickCount >= maxClicks) return true;
-        return false;
+    // Abstract method to be implemented by child classes
+    public abstract boolean isExpired();
+
+    // Password check
+    public boolean checkPassword(String input) {
+        if (this.password == null || this.password.isEmpty()) return true;
+        return this.password.equals(input);
     }
 
     // Getters and Setters
     public String getShortCode() { return shortCode; }
     public String getLongUrl() { return longUrl; }
     public int getClickCount() { return clickCount; }
-    public List<LocalDateTime> getClickTimestamps() { return clickTimestamps; }
-    public LocalDateTime getExpiryTime() { return expiryTime; }
-    public void setExpiryTime(LocalDateTime expiryTime) { this.expiryTime = expiryTime; }
-    public Integer getMaxClicks() { return maxClicks; }
-    public void setMaxClicks(Integer maxClicks) { this.maxClicks = maxClicks; }
     public String getCreator() { return creator; }
     public void setCreator(String creator) { this.creator = creator; }
-    public Map<String, Integer> getDeviceStats() { return deviceStats; }
+    public void setPassword(String password) { this.password = password; }
+    public String getPassword() { return password; }
     public boolean isSafe() { return isSafe; }
     public void setSafe(boolean safe) { isSafe = safe; }
+    public Map<String, Integer> getDeviceStats() { return deviceStats; }
 }
